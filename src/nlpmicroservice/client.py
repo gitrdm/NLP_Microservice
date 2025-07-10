@@ -136,69 +136,225 @@ class NLPClient:
             for keyword in response.keywords
         ]
     
-    def __enter__(self):
-        """Context manager entry."""
-        self.connect()
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.disconnect()
+    def summarize_text(self, text: str, max_sentences: int = 3) -> Dict[str, Any]:
+        """Summarize text using extractive summarization."""
+        try:
+            request = nlp_pb2.SummarizationRequest(text=text, max_sentences=max_sentences)
+            response = self.stub.TextSummarization(request)
+            
+            return {
+                'summary': response.summary,
+                'original_sentence_count': response.original_sentence_count,
+                'summary_sentence_count': response.summary_sentence_count
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in summarize_text: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in summarize_text: {e}")
+            raise
 
+    def search_frames(self, name_pattern: str = None, max_results: int = 50) -> Dict[str, Any]:
+        """Search for frames by name pattern."""
+        try:
+            request = nlp_pb2.FrameSearchRequest(
+                name_pattern=name_pattern or "",
+                max_results=max_results
+            )
+            response = self.stub.FrameSearch(request)
+            
+            frames = []
+            for frame_info in response.frames:
+                frames.append({
+                    'id': frame_info.id,
+                    'name': frame_info.name,
+                    'definition': frame_info.definition,
+                    'lexical_units': list(frame_info.lexical_units)
+                })
+            
+            return {
+                'frames': frames,
+                'total_count': response.total_count
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in search_frames: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in search_frames: {e}")
+            raise
 
-def main():
-    """Example usage of the NLP client."""
-    # Example text for testing
-    test_text = """
-    Natural Language Processing (NLP) is a fascinating field that combines 
-    computer science, artificial intelligence, and linguistics. It enables 
-    computers to understand, interpret, and generate human language in a 
-    valuable way. Companies like Google, Microsoft, and Apple use NLP 
-    technologies in their products.
-    """
-    
-    with NLPClient() as client:
-        print("=== NLP Service Client Example ===\n")
-        
-        # Tokenization
-        print("1. Tokenization:")
-        tokens_result = client.tokenize(test_text)
-        print(f"   Tokens: {tokens_result['tokens'][:10]}...")
-        print(f"   Token count: {tokens_result['token_count']}\n")
-        
-        # Sentiment Analysis
-        print("2. Sentiment Analysis:")
-        sentiment_result = client.analyze_sentiment(test_text)
-        print(f"   Sentiment: {sentiment_result['sentiment']}")
-        print(f"   Confidence: {sentiment_result['confidence']:.3f}\n")
-        
-        # Named Entity Recognition
-        print("3. Named Entity Recognition:")
-        entities = client.extract_named_entities(test_text)
-        for entity in entities:
-            print(f"   {entity['text']} ({entity['label']})")
-        print()
-        
-        # POS Tagging
-        print("4. POS Tagging (first 10 words):")
-        pos_tags = client.pos_tagging(test_text)
-        for tag in pos_tags[:10]:
-            print(f"   {tag['word']}: {tag['tag']}")
-        print()
-        
-        # Text Similarity
-        print("5. Text Similarity:")
-        text1 = "Natural Language Processing is amazing"
-        text2 = "NLP is a fascinating field"
-        similarity = client.calculate_similarity(text1, text2)
-        print(f"   Similarity between texts: {similarity:.3f}\n")
-        
-        # Keyword Extraction
-        print("6. Keyword Extraction:")
-        keywords = client.extract_keywords(test_text, max_keywords=5)
-        for keyword in keywords:
-            print(f"   {keyword['word']}: {keyword['score']:.3f}")
+    def get_frame_details(self, frame_id: int = None, frame_name: str = None) -> Dict[str, Any]:
+        """Get detailed information about a specific frame."""
+        try:
+            if frame_id:
+                request = nlp_pb2.FrameDetailsRequest(frame_id=frame_id)
+            elif frame_name:
+                request = nlp_pb2.FrameDetailsRequest(frame_name=frame_name)
+            else:
+                raise ValueError("Either frame_id or frame_name must be provided")
+            
+            response = self.stub.FrameDetails(request)
+            
+            # Convert lexical units
+            lexical_units = []
+            for lu in response.lexical_units:
+                lexical_units.append({
+                    'id': lu.id,
+                    'name': lu.name,
+                    'pos': lu.pos,
+                    'definition': lu.definition,
+                    'status': lu.status
+                })
+            
+            # Convert frame elements
+            frame_elements = []
+            for fe in response.frame_elements:
+                frame_elements.append({
+                    'id': fe.id,
+                    'name': fe.name,
+                    'definition': fe.definition,
+                    'core_type': fe.core_type,
+                    'abbreviation': fe.abbreviation
+                })
+            
+            # Convert frame relations
+            frame_relations = []
+            for rel in response.frame_relations:
+                frame_relations.append({
+                    'id': rel.id,
+                    'type': rel.type,
+                    'parent_frame': rel.parent_frame,
+                    'child_frame': rel.child_frame,
+                    'description': rel.description
+                })
+            
+            # Convert semantic types
+            semantic_types = []
+            for st in response.semantic_types:
+                semantic_types.append({
+                    'id': st.id,
+                    'name': st.name,
+                    'abbreviation': st.abbreviation,
+                    'definition': st.definition
+                })
+            
+            return {
+                'id': response.id,
+                'name': response.name,
+                'definition': response.definition,
+                'lexical_units': lexical_units,
+                'frame_elements': frame_elements,
+                'frame_relations': frame_relations,
+                'semantic_types': semantic_types
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in get_frame_details: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in get_frame_details: {e}")
+            raise
 
+    def search_lexical_units(self, name_pattern: str = None, frame_pattern: str = None, 
+                           max_results: int = 50) -> Dict[str, Any]:
+        """Search for lexical units."""
+        try:
+            request = nlp_pb2.LexicalUnitSearchRequest(
+                name_pattern=name_pattern or "",
+                frame_pattern=frame_pattern or "",
+                max_results=max_results
+            )
+            response = self.stub.LexicalUnitSearch(request)
+            
+            lexical_units = []
+            for lu_info in response.lexical_units:
+                lexical_units.append({
+                    'id': lu_info.id,
+                    'name': lu_info.name,
+                    'pos': lu_info.pos,
+                    'definition': lu_info.definition,
+                    'frame_name': lu_info.frame_name,
+                    'frame_id': lu_info.frame_id
+                })
+            
+            return {
+                'lexical_units': lexical_units,
+                'total_count': response.total_count
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in search_lexical_units: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in search_lexical_units: {e}")
+            raise
 
-if __name__ == "__main__":
-    main()
+    def get_frame_relations(self, frame_id: int = None, frame_name: str = None, 
+                          relation_type: str = None) -> Dict[str, Any]:
+        """Get frame relations."""
+        try:
+            if frame_id:
+                request = nlp_pb2.FrameRelationsRequest(frame_id=frame_id, relation_type=relation_type or "")
+            elif frame_name:
+                request = nlp_pb2.FrameRelationsRequest(frame_name=frame_name, relation_type=relation_type or "")
+            else:
+                raise ValueError("Either frame_id or frame_name must be provided")
+            
+            response = self.stub.FrameRelations(request)
+            
+            relations = []
+            for rel in response.relations:
+                relations.append({
+                    'id': rel.id,
+                    'type': rel.type,
+                    'parent_frame': rel.parent_frame,
+                    'child_frame': rel.child_frame,
+                    'description': rel.description
+                })
+            
+            return {
+                'relations': relations,
+                'relation_types': list(response.relation_types)
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in get_frame_relations: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in get_frame_relations: {e}")
+            raise
+
+    def semantic_role_labeling(self, text: str, include_frame_elements: bool = True) -> List[Dict[str, Any]]:
+        """Extract semantic roles from text using FrameNet."""
+        try:
+            request = nlp_pb2.SemanticRoleLabelingRequest(
+                text=text,
+                include_frame_elements=include_frame_elements
+            )
+            response = self.stub.SemanticRoleLabeling(request)
+            
+            semantic_frames = []
+            for frame in response.semantic_frames:
+                roles = []
+                for role in frame.roles:
+                    roles.append({
+                        'role_name': role.role_name,
+                        'role_type': role.role_type,
+                        'text': role.text,
+                        'start': role.start,
+                        'end': role.end
+                    })
+                
+                semantic_frames.append({
+                    'frame_name': frame.frame_name,
+                    'frame_id': frame.frame_id,
+                    'trigger_word': frame.trigger_word,
+                    'trigger_start': frame.trigger_start,
+                    'trigger_end': frame.trigger_end,
+                    'roles': roles
+                })
+            
+            return semantic_frames
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in semantic_role_labeling: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in semantic_role_labeling: {e}")
+            raise
