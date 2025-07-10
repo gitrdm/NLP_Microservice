@@ -85,7 +85,7 @@ nlpmicroservice/
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/gitrdm/NLP_Microservice.git
 cd nlpmicroservice
 
 # Create conda environment
