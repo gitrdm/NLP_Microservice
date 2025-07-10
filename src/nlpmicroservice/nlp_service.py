@@ -516,3 +516,341 @@ class NLPProcessor:
         except Exception as e:
             logger.error(f"Error in semantic role labeling: {e}")
             raise
+
+    # WordNet/Synset Processing Methods
+    
+    def lookup_synsets(self, word: str, pos: str = None, lang: str = 'eng') -> List[Dict[str, Any]]:
+        """Look up synsets for a word."""
+        try:
+            from nltk.corpus import wordnet as wn
+            
+            # Map POS strings to WordNet constants
+            pos_map = {
+                'NOUN': wn.NOUN,
+                'VERB': wn.VERB, 
+                'ADJ': wn.ADJ,
+                'ADV': wn.ADV
+            }
+            
+            # Get synsets
+            if pos and pos in pos_map:
+                synsets = wn.synsets(word, pos=pos_map[pos], lang=lang)
+            else:
+                synsets = wn.synsets(word, lang=lang)
+            
+            result = []
+            for synset in synsets:
+                # Get lemma names in the specified language
+                lemma_names = synset.lemma_names(lang) if lang != 'eng' else [lemma.name() for lemma in synset.lemmas()]
+                
+                synset_info = {
+                    'id': synset.name(),
+                    'name': synset.name().split('.')[0],
+                    'pos': synset.pos().upper(),
+                    'definition': synset.definition(),
+                    'examples': synset.examples(),
+                    'lemma_names': lemma_names,
+                    'max_depth': synset.max_depth()
+                }
+                result.append(synset_info)
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error looking up synsets: {e}")
+            raise
+
+    def get_synset_details(self, synset_id: str, lang: str = 'eng', 
+                          include_relations: bool = True, include_lemmas: bool = True) -> Dict[str, Any]:
+        """Get detailed information about a specific synset."""
+        try:
+            from nltk.corpus import wordnet as wn
+            
+            synset = wn.synset(synset_id)
+            
+            # Basic synset info
+            lemma_names = synset.lemma_names(lang) if lang != 'eng' else [lemma.name() for lemma in synset.lemmas()]
+            
+            result = {
+                'synset': {
+                    'id': synset.name(),
+                    'name': synset.name().split('.')[0],
+                    'pos': synset.pos().upper(),
+                    'definition': synset.definition(),
+                    'examples': synset.examples(),
+                    'lemma_names': lemma_names,
+                    'max_depth': synset.max_depth()
+                }
+            }
+            
+            if include_relations:
+                # Helper function to convert synsets to info dicts
+                def synsets_to_info(synsets):
+                    return [{
+                        'id': s.name(),
+                        'name': s.name().split('.')[0],
+                        'pos': s.pos().upper(),
+                        'definition': s.definition(),
+                        'examples': s.examples()[:2],  # Limit examples
+                        'lemma_names': s.lemma_names(lang)[:5] if lang != 'eng' else [lemma.name() for lemma in s.lemmas()][:5],
+                        'max_depth': s.max_depth()
+                    } for s in synsets]
+                
+                # Get various relations
+                result['hypernyms'] = synsets_to_info(synset.hypernyms())
+                result['hyponyms'] = synsets_to_info(synset.hyponyms()[:10])  # Limit hyponyms
+                result['meronyms'] = synsets_to_info(synset.part_meronyms() + synset.substance_meronyms() + synset.member_meronyms())
+                result['holonyms'] = synsets_to_info(synset.part_holonyms() + synset.substance_holonyms() + synset.member_holonyms())
+                result['similar_tos'] = synsets_to_info(synset.similar_tos())
+                result['also_sees'] = synsets_to_info(synset.also_sees())
+                result['root_hypernyms'] = synsets_to_info(synset.root_hypernyms())
+            
+            if include_lemmas:
+                lemmas = []
+                for lemma in synset.lemmas(lang):
+                    lemma_info = {
+                        'name': lemma.name(),
+                        'key': lemma.key(),
+                        'count': lemma.count(),
+                        'lang': lang,
+                        'antonyms': [ant.name() for ant in lemma.antonyms()],
+                        'derivationally_related_forms': [drf.name() for drf in lemma.derivationally_related_forms()],
+                        'pertainyms': [p.name() for p in lemma.pertainyms()]
+                    }
+                    lemmas.append(lemma_info)
+                result['lemmas'] = lemmas
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error getting synset details: {e}")
+            raise
+
+    def calculate_synset_similarity(self, synset1_id: str, synset2_id: str, 
+                                  similarity_type: str = 'path', simulate_root: bool = True) -> Dict[str, Any]:
+        """Calculate similarity between two synsets."""
+        try:
+            from nltk.corpus import wordnet as wn
+            from nltk.corpus import wordnet_ic
+            
+            synset1 = wn.synset(synset1_id)
+            synset2 = wn.synset(synset2_id)
+            
+            similarity_score = None
+            
+            # Calculate similarity based on type
+            if similarity_type == 'path':
+                similarity_score = synset1.path_similarity(synset2, simulate_root=simulate_root)
+            elif similarity_type == 'lch':
+                similarity_score = synset1.lch_similarity(synset2, simulate_root=simulate_root)
+            elif similarity_type == 'wup':
+                similarity_score = synset1.wup_similarity(synset2, simulate_root=simulate_root)
+            elif similarity_type in ['res', 'jcn', 'lin']:
+                # These require information content
+                try:
+                    brown_ic = wordnet_ic.ic('ic-brown.dat')
+                    if similarity_type == 'res':
+                        similarity_score = synset1.res_similarity(synset2, brown_ic)
+                    elif similarity_type == 'jcn':
+                        similarity_score = synset1.jcn_similarity(synset2, brown_ic)
+                    elif similarity_type == 'lin':
+                        similarity_score = synset1.lin_similarity(synset2, brown_ic)
+                except Exception:
+                    # Fall back to path similarity if IC data not available
+                    similarity_score = synset1.path_similarity(synset2, simulate_root=simulate_root)
+            
+            # Get lowest common hypernyms
+            common_hypernyms = []
+            try:
+                lch_synsets = synset1.lowest_common_hypernyms(synset2)
+                for lch in lch_synsets:
+                    common_hypernyms.append({
+                        'id': lch.name(),
+                        'name': lch.name().split('.')[0],
+                        'pos': lch.pos().upper(),
+                        'definition': lch.definition(),
+                        'examples': lch.examples()[:1],
+                        'lemma_names': [lemma.name() for lemma in lch.lemmas()],
+                        'max_depth': lch.max_depth()
+                    })
+            except Exception:
+                pass
+            
+            return {
+                'similarity_score': similarity_score if similarity_score is not None else 0.0,
+                'similarity_type': similarity_type,
+                'synset1_id': synset1_id,
+                'synset2_id': synset2_id,
+                'common_hypernyms': common_hypernyms
+            }
+        except Exception as e:
+            logger.error(f"Error calculating synset similarity: {e}")
+            raise
+
+    def get_synset_relations(self, synset_id: str, relation_type: str = 'hypernyms', 
+                           max_depth: int = 3) -> Dict[str, Any]:
+        """Get synset relations of a specific type."""
+        try:
+            from nltk.corpus import wordnet as wn
+            
+            synset = wn.synset(synset_id)
+            
+            # Define relation functions
+            relation_map = {
+                'hypernyms': synset.hypernyms,
+                'hyponyms': synset.hyponyms,
+                'meronyms': lambda: synset.part_meronyms() + synset.substance_meronyms() + synset.member_meronyms(),
+                'holonyms': lambda: synset.part_holonyms() + synset.substance_holonyms() + synset.member_holonyms(),
+                'similar_tos': synset.similar_tos,
+                'also_sees': synset.also_sees,
+                'root_hypernyms': synset.root_hypernyms
+            }
+            
+            if relation_type not in relation_map:
+                raise ValueError(f"Unknown relation type: {relation_type}")
+            
+            # Get direct relations
+            related_synsets = relation_map[relation_type]()
+            
+            # Convert to info format
+            synsets_info = []
+            for rel_synset in related_synsets[:20]:  # Limit results
+                synsets_info.append({
+                    'id': rel_synset.name(),
+                    'name': rel_synset.name().split('.')[0],
+                    'pos': rel_synset.pos().upper(),
+                    'definition': rel_synset.definition(),
+                    'examples': rel_synset.examples()[:1],
+                    'lemma_names': [lemma.name() for lemma in rel_synset.lemmas()][:5],
+                    'max_depth': rel_synset.max_depth()
+                })
+            
+            # Get relation paths for closure operations if needed
+            relation_paths = []
+            if relation_type in ['hypernyms', 'hyponyms'] and max_depth > 1:
+                try:
+                    if relation_type == 'hypernyms':
+                        closure_synsets = synset.closure(synset.hypernyms, depth=max_depth)
+                    else:
+                        closure_synsets = synset.closure(synset.hyponyms, depth=max_depth)
+                    
+                    # Create simplified paths (just depth info)
+                    for i, rel_synset in enumerate(closure_synsets[:10]):
+                        path_info = {
+                            'path': [{
+                                'id': rel_synset.name(),
+                                'name': rel_synset.name().split('.')[0],
+                                'pos': rel_synset.pos().upper(),
+                                'definition': rel_synset.definition()[:100] + '...' if len(rel_synset.definition()) > 100 else rel_synset.definition(),
+                                'examples': [],
+                                'lemma_names': [lemma.name() for lemma in rel_synset.lemmas()][:3],
+                                'max_depth': rel_synset.max_depth()
+                            }],
+                            'depth': 1  # Simplified - would need actual path computation
+                        }
+                        relation_paths.append(path_info)
+                except Exception:
+                    pass  # Skip closure if it fails
+            
+            return {
+                'synset_id': synset_id,
+                'relation_type': relation_type,
+                'related_synsets': synsets_info,
+                'relation_paths': relation_paths
+            }
+        except Exception as e:
+            logger.error(f"Error getting synset relations: {e}")
+            raise
+
+    def search_lemmas(self, lemma_name: str, pos: str = None, lang: str = 'eng', 
+                     include_morphology: bool = True) -> Dict[str, Any]:
+        """Search for lemmas by name."""
+        try:
+            from nltk.corpus import wordnet as wn
+            
+            # Map POS strings to WordNet constants
+            pos_map = {
+                'NOUN': wn.NOUN,
+                'VERB': wn.VERB,
+                'ADJ': wn.ADJ,
+                'ADV': wn.ADV
+            }
+            
+            # Try morphological analysis first
+            morphed_word = lemma_name
+            if include_morphology:
+                try:
+                    if pos and pos in pos_map:
+                        morphed = wn.morphy(lemma_name, pos_map[pos])
+                    else:
+                        morphed = wn.morphy(lemma_name)
+                    if morphed:
+                        morphed_word = morphed
+                except Exception:
+                    pass
+            
+            # Get lemmas
+            if pos and pos in pos_map:
+                lemmas = wn.lemmas(morphed_word, pos=pos_map[pos], lang=lang)
+            else:
+                lemmas = wn.lemmas(morphed_word, lang=lang)
+            
+            lemmas_info = []
+            for lemma in lemmas:
+                lemma_info = {
+                    'name': lemma.name(),
+                    'key': lemma.key(),
+                    'count': lemma.count(),
+                    'lang': lang,
+                    'antonyms': [ant.name() for ant in lemma.antonyms()],
+                    'derivationally_related_forms': [drf.name() for drf in lemma.derivationally_related_forms()],
+                    'pertainyms': [p.name() for p in lemma.pertainyms()]
+                }
+                lemmas_info.append(lemma_info)
+            
+            return {
+                'lemmas': lemmas_info,
+                'original_word': lemma_name,
+                'morphed_word': morphed_word,
+                'pos': pos or '',
+                'lang': lang
+            }
+        except Exception as e:
+            logger.error(f"Error searching lemmas: {e}")
+            raise
+
+    def search_synonyms(self, word: str, lang: str = 'eng', max_synonyms: int = 20) -> Dict[str, Any]:
+        """Search for synonyms of a word."""
+        try:
+            from nltk.corpus import wordnet as wn
+            
+            # Get synonym groups from WordNet
+            synonym_groups = []
+            
+            # Get all synsets for the word
+            synsets = wn.synsets(word, lang=lang)
+            
+            for synset in synsets:
+                # Get lemma names (synonyms) for this sense
+                if lang != 'eng':
+                    synonyms = synset.lemma_names(lang)
+                else:
+                    synonyms = [lemma.name() for lemma in synset.lemmas()]
+                
+                # Remove the original word and limit results
+                synonyms = [syn for syn in synonyms if syn.lower() != word.lower()][:max_synonyms]
+                
+                if synonyms:  # Only include if we have synonyms
+                    synonym_group = {
+                        'sense_definition': synset.definition(),
+                        'synonyms': synonyms,
+                        'synset_id': synset.name()
+                    }
+                    synonym_groups.append(synonym_group)
+            
+            return {
+                'word': word,
+                'lang': lang,
+                'synonym_groups': synonym_groups
+            }
+        except Exception as e:
+            logger.error(f"Error searching synonyms: {e}")
+            raise

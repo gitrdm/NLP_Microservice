@@ -358,3 +358,276 @@ class NLPClient:
         except Exception as e:
             logger.error(f"Error in semantic_role_labeling: {e}")
             raise
+
+    # WordNet Synset Methods
+
+    def lookup_synsets(self, word: str, pos: str = None, lang: str = "eng") -> Dict[str, Any]:
+        """Look up synsets for a word."""
+        try:
+            request = nlp_pb2.SynsetsLookupRequest(
+                word=word,
+                pos=pos or "",
+                lang=lang
+            )
+            response = self.stub.SynsetsLookup(request)
+            
+            synsets = []
+            for synset_info in response.synsets:
+                synsets.append({
+                    'name': synset_info.name,
+                    'definition': synset_info.definition,
+                    'pos': synset_info.pos,
+                    'lemma_names': list(synset_info.lemma_names),
+                    'examples': list(synset_info.examples)
+                })
+            
+            return {
+                'synsets': synsets,
+                'word': response.word,
+                'pos': response.pos,
+                'lang': response.lang
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in lookup_synsets: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in lookup_synsets: {e}")
+            raise
+
+    def get_synset_details(self, synset_id: str, include_relations: bool = True,
+                          include_lemmas: bool = True, lang: str = "eng") -> Dict[str, Any]:
+        """Get detailed information about a specific synset."""
+        try:
+            request = nlp_pb2.SynsetDetailsRequest(
+                synset_id=synset_id,
+                lang=lang,
+                include_relations=include_relations,
+                include_lemmas=include_lemmas
+            )
+            response = self.stub.SynsetDetails(request)
+            
+            # Convert synset info
+            synset_info = {
+                'id': response.synset.id,
+                'name': response.synset.name,
+                'pos': response.synset.pos,
+                'definition': response.synset.definition,
+                'examples': list(response.synset.examples),
+                'lemma_names': list(response.synset.lemma_names),
+                'max_depth': response.synset.max_depth
+            }
+            
+            # Convert lemmas
+            lemmas = []
+            for lemma in response.lemmas:
+                lemmas.append({
+                    'name': lemma.name,
+                    'key': lemma.key,
+                    'count': lemma.count,
+                    'lang': lemma.lang,
+                    'antonyms': list(lemma.antonyms),
+                    'derivationally_related_forms': list(lemma.derivationally_related_forms),
+                    'pertainyms': list(lemma.pertainyms)
+                })
+            
+            # Convert related synsets
+            hypernyms = []
+            for synset in response.hypernyms:
+                hypernyms.append({
+                    'id': synset.id,
+                    'name': synset.name,
+                    'pos': synset.pos,
+                    'definition': synset.definition,
+                    'examples': list(synset.examples),
+                    'lemma_names': list(synset.lemma_names),
+                    'max_depth': synset.max_depth
+                })
+            
+            hyponyms = []
+            for synset in response.hyponyms:
+                hyponyms.append({
+                    'id': synset.id,
+                    'name': synset.name,
+                    'pos': synset.pos,
+                    'definition': synset.definition,
+                    'examples': list(synset.examples),
+                    'lemma_names': list(synset.lemma_names),
+                    'max_depth': synset.max_depth
+                })
+            
+            return {
+                'synset': synset_info,
+                'hypernyms': hypernyms,
+                'hyponyms': hyponyms,
+                'lemmas': lemmas
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in get_synset_details: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in get_synset_details: {e}")
+            raise
+
+    def calculate_synset_similarity(self, synset1_id: str, synset2_id: str, 
+                                  similarity_type: str = "path", simulate_root: bool = False) -> Dict[str, Any]:
+        """Calculate similarity between two synsets."""
+        try:
+            request = nlp_pb2.SynsetSimilarityRequest(
+                synset1_id=synset1_id,
+                synset2_id=synset2_id,
+                similarity_type=similarity_type,
+                simulate_root=simulate_root
+            )
+            response = self.stub.SynsetSimilarity(request)
+            
+            # Convert common hypernyms
+            common_hypernyms = []
+            for synset in response.common_hypernyms:
+                common_hypernyms.append({
+                    'id': synset.id,
+                    'name': synset.name,
+                    'pos': synset.pos,
+                    'definition': synset.definition,
+                    'examples': list(synset.examples),
+                    'lemma_names': list(synset.lemma_names),
+                    'max_depth': synset.max_depth
+                })
+            
+            return {
+                'similarity_score': response.similarity_score,
+                'similarity_type': response.similarity_type,
+                'synset1_id': response.synset1_id,
+                'synset2_id': response.synset2_id,
+                'common_hypernyms': common_hypernyms
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in calculate_synset_similarity: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in calculate_synset_similarity: {e}")
+            raise
+
+    def get_synset_relations(self, synset_id: str, relation_type: str = None,
+                           max_depth: int = 1) -> Dict[str, Any]:
+        """Get relations for a synset."""
+        try:
+            request = nlp_pb2.SynsetRelationsRequest(
+                synset_id=synset_id,
+                relation_type=relation_type or "",
+                max_depth=max_depth
+            )
+            response = self.stub.SynsetRelations(request)
+            
+            # Convert related synsets
+            related_synsets = []
+            for synset in response.related_synsets:
+                related_synsets.append({
+                    'id': synset.id,
+                    'name': synset.name,
+                    'pos': synset.pos,
+                    'definition': synset.definition,
+                    'examples': list(synset.examples),
+                    'lemma_names': list(synset.lemma_names),
+                    'max_depth': synset.max_depth
+                })
+            
+            # Convert relation paths
+            relation_paths = []
+            for path in response.relation_paths:
+                path_synsets = []
+                for synset in path.path:
+                    path_synsets.append({
+                        'id': synset.id,
+                        'name': synset.name,
+                        'pos': synset.pos,
+                        'definition': synset.definition,
+                        'examples': list(synset.examples),
+                        'lemma_names': list(synset.lemma_names),
+                        'max_depth': synset.max_depth
+                    })
+                relation_paths.append({
+                    'path': path_synsets,
+                    'depth': path.depth
+                })
+            
+            return {
+                'synset_id': response.synset_id,
+                'relation_type': response.relation_type,
+                'related_synsets': related_synsets,
+                'relation_paths': relation_paths
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in get_synset_relations: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in get_synset_relations: {e}")
+            raise
+
+    def search_lemmas(self, lemma_name: str, pos: str = None, lang: str = "eng",
+                     include_morphology: bool = False) -> Dict[str, Any]:
+        """Search for lemmas by name."""
+        try:
+            request = nlp_pb2.LemmaSearchRequest(
+                lemma_name=lemma_name,
+                pos=pos or "",
+                lang=lang,
+                include_morphology=include_morphology
+            )
+            response = self.stub.LemmaSearch(request)
+            
+            lemmas = []
+            for lemma_info in response.lemmas:
+                lemmas.append({
+                    'name': lemma_info.name,
+                    'key': lemma_info.key,
+                    'count': lemma_info.count,
+                    'lang': lemma_info.lang,
+                    'antonyms': list(lemma_info.antonyms),
+                    'derivationally_related_forms': list(lemma_info.derivationally_related_forms),
+                    'pertainyms': list(lemma_info.pertainyms)
+                })
+            
+            return {
+                'lemmas': lemmas,
+                'original_word': response.original_word,
+                'morphed_word': response.morphed_word,
+                'pos': response.pos,
+                'lang': response.lang
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in search_lemmas: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in search_lemmas: {e}")
+            raise
+
+    def search_synonyms(self, word: str, lang: str = "eng",
+                       max_synonyms: int = 20) -> Dict[str, Any]:
+        """Search for synonyms of a word."""
+        try:
+            request = nlp_pb2.SynonymSearchRequest(
+                word=word,
+                lang=lang,
+                max_synonyms=max_synonyms
+            )
+            response = self.stub.SynonymSearch(request)
+            
+            synonym_groups = []
+            for group in response.synonym_groups:
+                synonym_groups.append({
+                    'sense_definition': group.sense_definition,
+                    'synonyms': list(group.synonyms),
+                    'synset_id': group.synset_id
+                })
+            
+            return {
+                'word': response.word,
+                'lang': response.lang,
+                'synonym_groups': synonym_groups
+            }
+        except grpc.RpcError as e:
+            logger.error(f"gRPC error in search_synonyms: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in search_synonyms: {e}")
+            raise

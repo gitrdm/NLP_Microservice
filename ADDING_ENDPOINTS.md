@@ -18,6 +18,27 @@ The NLP microservice uses gRPC for communication between client and server. To a
 | `KeywordExtraction` | Extract keywords | `extract_keywords()` | `text`, `max_keywords` |
 | `TextSummarization` | Summarize text | `summarize_text()` | `text`, `max_sentences` |
 
+### FrameNet Endpoints
+
+| Endpoint | Purpose | Client Method | Parameters |
+|----------|---------|---------------|------------|
+| `FrameSearch` | Search for frames | `search_frames()` | `name_pattern`, `max_results` |
+| `FrameDetails` | Get frame details | `get_frame_details()` | `frame_id` or `frame_name` |
+| `LexicalUnitSearch` | Search lexical units | `search_lexical_units()` | `name_pattern`, `frame_pattern`, `max_results` |
+| `FrameRelations` | Get frame relations | `get_frame_relations()` | `frame_id` or `frame_name`, `relation_type` |
+| `SemanticRoleLabeling` | Extract semantic roles | `semantic_role_labeling()` | `text`, `include_frame_elements` |
+
+### WordNet/Synset Endpoints
+
+| Endpoint | Purpose | Client Method | Parameters |
+|----------|---------|---------------|------------|
+| `SynsetsLookup` | Look up synsets for a word | `lookup_synsets()` | `word`, `pos`, `lang` |
+| `SynsetDetails` | Get detailed synset information | `get_synset_details()` | `synset_name`, `include_relations`, `include_examples` |
+| `SynsetSimilarity` | Calculate synset similarity | `calculate_synset_similarity()` | `synset1`, `synset2`, `similarity_type` |
+| `SynsetRelations` | Get synset relations | `get_synset_relations()` | `synset_name`, `relation_type`, `max_depth` |
+| `LemmaSearch` | Search lemmas by pattern | `search_lemmas()` | `lemma_pattern`, `pos`, `lang`, `max_results` |
+| `SynonymSearch` | Search synonyms for a word | `search_synonyms()` | `word`, `pos`, `lang`, `include_definitions` |
+
 ## Step-by-Step Procedure
 
 ### Step 1: Define the Endpoint in the Proto File

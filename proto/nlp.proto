@@ -31,6 +31,14 @@ service NLPService {
   rpc LexicalUnitSearch(LexicalUnitSearchRequest) returns (LexicalUnitSearchResponse);
   rpc FrameRelations(FrameRelationsRequest) returns (FrameRelationsResponse);
   rpc SemanticRoleLabeling(SemanticRoleLabelingRequest) returns (SemanticRoleLabelingResponse);
+  
+  // WordNet/Synset API endpoints
+  rpc SynsetsLookup(SynsetsLookupRequest) returns (SynsetsLookupResponse);
+  rpc SynsetDetails(SynsetDetailsRequest) returns (SynsetDetailsResponse);
+  rpc SynsetSimilarity(SynsetSimilarityRequest) returns (SynsetSimilarityResponse);
+  rpc SynsetRelations(SynsetRelationsRequest) returns (SynsetRelationsResponse);
+  rpc LemmaSearch(LemmaSearchRequest) returns (LemmaSearchResponse);
+  rpc SynonymSearch(SynonymSearchRequest) returns (SynonymSearchResponse);
 }
 
 // Request/Response messages
@@ -238,4 +246,123 @@ message SemanticRole {
   string text = 3;
   int32 start = 4;
   int32 end = 5;
+}
+
+// WordNet/Synset API Messages
+message SynsetsLookupRequest {
+  string word = 1;
+  string pos = 2;  // Optional: NOUN, VERB, ADJ, ADV
+  string lang = 3; // Optional language code, defaults to 'eng'
+}
+
+message SynsetsLookupResponse {
+  repeated SynsetInfo synsets = 1;
+  string word = 2;
+  string pos = 3;
+  string lang = 4;
+}
+
+message SynsetInfo {
+  string id = 1;          // e.g., "dog.n.01"
+  string name = 2;        // e.g., "dog"
+  string pos = 3;         // e.g., "NOUN"
+  string definition = 4;
+  repeated string examples = 5;
+  repeated string lemma_names = 6;
+  int32 max_depth = 7;
+}
+
+message SynsetDetailsRequest {
+  string synset_id = 1;   // e.g., "dog.n.01"
+  string lang = 2;        // Optional language code
+  bool include_relations = 3; // Include hypernyms, hyponyms, etc.
+  bool include_lemmas = 4;    // Include detailed lemma information
+}
+
+message SynsetDetailsResponse {
+  SynsetInfo synset = 1;
+  repeated SynsetInfo hypernyms = 2;
+  repeated SynsetInfo hyponyms = 3;
+  repeated SynsetInfo meronyms = 4;     // part_meronyms
+  repeated SynsetInfo holonyms = 5;     // part_holonyms
+  repeated SynsetInfo similar_tos = 6;
+  repeated SynsetInfo also_sees = 7;
+  repeated LemmaInfo lemmas = 8;
+  repeated SynsetInfo root_hypernyms = 9;
+}
+
+message LemmaInfo {
+  string name = 1;
+  string key = 2;
+  int32 count = 3;        // Usage frequency
+  string lang = 4;
+  repeated string antonyms = 5;
+  repeated string derivationally_related_forms = 6;
+  repeated string pertainyms = 7;
+}
+
+message SynsetSimilarityRequest {
+  string synset1_id = 1;
+  string synset2_id = 2;
+  string similarity_type = 3; // path, lch, wup, res, jcn, lin
+  bool simulate_root = 4;     // For verb similarities
+}
+
+message SynsetSimilarityResponse {
+  double similarity_score = 1;
+  string similarity_type = 2;
+  string synset1_id = 3;
+  string synset2_id = 4;
+  repeated SynsetInfo common_hypernyms = 5;
+}
+
+message SynsetRelationsRequest {
+  string synset_id = 1;
+  string relation_type = 2; // hypernyms, hyponyms, meronyms, holonyms, similar_tos, etc.
+  int32 max_depth = 3;      // For closure operations
+}
+
+message SynsetRelationsResponse {
+  string synset_id = 1;
+  string relation_type = 2;
+  repeated SynsetInfo related_synsets = 3;
+  repeated SynsetPath relation_paths = 4; // For showing paths
+}
+
+message SynsetPath {
+  repeated SynsetInfo path = 1;
+  int32 depth = 2;
+}
+
+message LemmaSearchRequest {
+  string lemma_name = 1;
+  string pos = 2;          // Optional: NOUN, VERB, ADJ, ADV
+  string lang = 3;         // Optional language code
+  bool include_morphology = 4; // Include morphy results
+}
+
+message LemmaSearchResponse {
+  repeated LemmaInfo lemmas = 1;
+  string original_word = 2;
+  string morphed_word = 3; // Result from morphy if different
+  string pos = 4;
+  string lang = 5;
+}
+
+message SynonymSearchRequest {
+  string word = 1;
+  string lang = 2;         // Optional language code
+  int32 max_synonyms = 3;  // Optional, defaults to 20
+}
+
+message SynonymSearchResponse {
+  string word = 1;
+  string lang = 2;
+  repeated SynonymGroup synonym_groups = 3;
+}
+
+message SynonymGroup {
+  string sense_definition = 1;
+  repeated string synonyms = 2;
+  string synset_id = 3;
 }

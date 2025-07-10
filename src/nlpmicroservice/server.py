@@ -22,6 +22,32 @@ except ImportError:
         pass
 
 
+def serve():
+    """Start the gRPC server."""
+    # Create server
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    
+    # Add servicer
+    nlp_pb2_grpc.add_NLPServiceServicer_to_server(NLPServicer(), server)
+    
+    # Bind to port
+    port = getattr(settings, 'GRPC_PORT', 8161)
+    server.add_insecure_port(f'[::]:{port}')
+    
+    # Start server
+    server.start()
+    logger.info(f"🚀 NLP microservice server started on port {port}")
+    
+    try:
+        # Keep server running
+        while True:
+            import time
+            time.sleep(86400)  # Sleep for a day
+    except KeyboardInterrupt:
+        logger.info("Shutting down server...")
+        server.stop(0)
+
+
 class NLPServicer(nlp_pb2_grpc.NLPServiceServicer):
     """gRPC servicer for NLP operations."""
     
@@ -376,38 +402,257 @@ class NLPServicer(nlp_pb2_grpc.NLPServiceServicer):
             context.set_details(f"Semantic role labeling failed: {e}")
             return nlp_pb2.SemanticRoleLabelingResponse()
 
-
-def serve():
-    """Start the gRPC server."""
-    logger.info("Starting NLP gRPC server...")
+    # WordNet/Synset Endpoints
     
-    # Create server
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=settings.max_workers))
-    
-    # Add servicer
-    nlp_pb2_grpc.add_NLPServiceServicer_to_server(NLPServicer(), server)
-    
-    # Add port
-    listen_addr = f"{settings.server_host}:{settings.server_port}"
-    server.add_insecure_port(listen_addr)
-    
-    # Start server
-    server.start()
-    logger.info(f"NLP gRPC server started on {listen_addr}")
-    
-    try:
-        server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("Shutting down server...")
-        server.stop(0)
+    def SynsetsLookup(self, request, context):
+        """Look up synsets for a word."""
+        logger.info(f"SynsetsLookup request: word={request.word}, pos={request.pos}, lang={request.lang}")
+        try:
+            synsets = self.nlp_processor.lookup_synsets(
+                request.word, 
+                request.pos if request.pos else None,
+                request.lang if request.lang else 'eng'
+            )
+            
+            # Convert to protobuf format
+            pb_synsets = []
+            for synset in synsets:
+                pb_synset = nlp_pb2.SynsetInfo(
+                    id=synset['id'],
+                    name=synset['name'],
+                    pos=synset['pos'],
+                    definition=synset['definition'],
+                    examples=synset['examples'],
+                    lemma_names=synset['lemma_names'],
+                    max_depth=synset['max_depth']
+                )
+                pb_synsets.append(pb_synset)
+            
+            return nlp_pb2.SynsetsLookupResponse(
+                synsets=pb_synsets,
+                word=request.word,
+                pos=request.pos,
+                lang=request.lang if request.lang else 'eng'
+            )
+        except Exception as e:
+            logger.error(f"SynsetsLookup error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Synsets lookup failed: {e}")
+            return nlp_pb2.SynsetsLookupResponse()
 
+    def SynsetDetails(self, request, context):
+        """Get detailed information about a synset."""
+        logger.info(f"SynsetDetails request: synset_id={request.synset_id}")
+        try:
+            details = self.nlp_processor.get_synset_details(
+                request.synset_id,
+                request.lang if request.lang else 'eng',
+                request.include_relations,
+                request.include_lemmas
+            )
+            
+            # Helper function to convert synset info
+            def create_synset_info(synset_data):
+                return nlp_pb2.SynsetInfo(
+                    id=synset_data['id'],
+                    name=synset_data['name'],
+                    pos=synset_data['pos'],
+                    definition=synset_data['definition'],
+                    examples=synset_data.get('examples', []),
+                    lemma_names=synset_data.get('lemma_names', []),
+                    max_depth=synset_data.get('max_depth', 0)
+                )
+            
+            # Convert main synset
+            main_synset = create_synset_info(details['synset'])
+            
+            # Convert relations if included
+            response = nlp_pb2.SynsetDetailsResponse(synset=main_synset)
+            
+            if request.include_relations:
+                response.hypernyms.extend([create_synset_info(s) for s in details.get('hypernyms', [])])
+                response.hyponyms.extend([create_synset_info(s) for s in details.get('hyponyms', [])])
+                response.meronyms.extend([create_synset_info(s) for s in details.get('meronyms', [])])
+                response.holonyms.extend([create_synset_info(s) for s in details.get('holonyms', [])])
+                response.similar_tos.extend([create_synset_info(s) for s in details.get('similar_tos', [])])
+                response.also_sees.extend([create_synset_info(s) for s in details.get('also_sees', [])])
+                response.root_hypernyms.extend([create_synset_info(s) for s in details.get('root_hypernyms', [])])
+            
+            if request.include_lemmas:
+                for lemma in details.get('lemmas', []):
+                    pb_lemma = nlp_pb2.LemmaInfo(
+                        name=lemma['name'],
+                        key=lemma['key'],
+                        count=lemma['count'],
+                        lang=lemma['lang'],
+                        antonyms=lemma['antonyms'],
+                        derivationally_related_forms=lemma['derivationally_related_forms'],
+                        pertainyms=lemma['pertainyms']
+                    )
+                    response.lemmas.append(pb_lemma)
+            
+            return response
+        except Exception as e:
+            logger.error(f"SynsetDetails error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Synset details failed: {e}")
+            return nlp_pb2.SynsetDetailsResponse()
 
-def main():
-    """Main entry point."""
-    logger.info("NLP Microservice starting up...")
-    logger.info(f"Configuration: {settings.model_dump()}")
-    serve()
+    def SynsetSimilarity(self, request, context):
+        """Calculate similarity between two synsets."""
+        logger.info(f"SynsetSimilarity request: {request.synset1_id} vs {request.synset2_id}, type={request.similarity_type}")
+        try:
+            similarity = self.nlp_processor.calculate_synset_similarity(
+                request.synset1_id,
+                request.synset2_id,
+                request.similarity_type if request.similarity_type else 'path',
+                request.simulate_root
+            )
+            
+            # Convert common hypernyms
+            common_hypernyms = []
+            for ch in similarity['common_hypernyms']:
+                common_hypernyms.append(nlp_pb2.SynsetInfo(
+                    id=ch['id'],
+                    name=ch['name'],
+                    pos=ch['pos'],
+                    definition=ch['definition'],
+                    examples=ch.get('examples', []),
+                    lemma_names=ch.get('lemma_names', []),
+                    max_depth=ch.get('max_depth', 0)
+                ))
+            
+            return nlp_pb2.SynsetSimilarityResponse(
+                similarity_score=similarity['similarity_score'],
+                similarity_type=similarity['similarity_type'],
+                synset1_id=similarity['synset1_id'],
+                synset2_id=similarity['synset2_id'],
+                common_hypernyms=common_hypernyms
+            )
+        except Exception as e:
+            logger.error(f"SynsetSimilarity error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Synset similarity failed: {e}")
+            return nlp_pb2.SynsetSimilarityResponse()
 
+    def SynsetRelations(self, request, context):
+        """Get synset relations of a specific type."""
+        logger.info(f"SynsetRelations request: synset_id={request.synset_id}, relation_type={request.relation_type}")
+        try:
+            relations = self.nlp_processor.get_synset_relations(
+                request.synset_id,
+                request.relation_type if request.relation_type else 'hypernyms',
+                request.max_depth if request.max_depth else 3
+            )
+            
+            # Convert related synsets
+            related_synsets = []
+            for synset in relations['related_synsets']:
+                related_synsets.append(nlp_pb2.SynsetInfo(
+                    id=synset['id'],
+                    name=synset['name'],
+                    pos=synset['pos'],
+                    definition=synset['definition'],
+                    examples=synset.get('examples', []),
+                    lemma_names=synset.get('lemma_names', []),
+                    max_depth=synset.get('max_depth', 0)
+                ))
+            
+            # Convert relation paths
+            relation_paths = []
+            for path in relations['relation_paths']:
+                path_synsets = []
+                for synset in path['path']:
+                    path_synsets.append(nlp_pb2.SynsetInfo(
+                        id=synset['id'],
+                        name=synset['name'],
+                        pos=synset['pos'],
+                        definition=synset['definition'],
+                        examples=synset.get('examples', []),
+                        lemma_names=synset.get('lemma_names', []),
+                        max_depth=synset.get('max_depth', 0)
+                    ))
+                
+                relation_paths.append(nlp_pb2.SynsetPath(
+                    path=path_synsets,
+                    depth=path['depth']
+                ))
+            
+            return nlp_pb2.SynsetRelationsResponse(
+                synset_id=relations['synset_id'],
+                relation_type=relations['relation_type'],
+                related_synsets=related_synsets,
+                relation_paths=relation_paths
+            )
+        except Exception as e:
+            logger.error(f"SynsetRelations error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Synset relations failed: {e}")
+            return nlp_pb2.SynsetRelationsResponse()
 
-if __name__ == "__main__":
-    main()
+    def LemmaSearch(self, request, context):
+        """Search for lemmas by name."""
+        logger.info(f"LemmaSearch request: lemma_name={request.lemma_name}, pos={request.pos}")
+        try:
+            results = self.nlp_processor.search_lemmas(
+                request.lemma_name,
+                request.pos if request.pos else None,
+                request.lang if request.lang else 'eng',
+                request.include_morphology
+            )
+            
+            # Convert lemmas
+            lemmas = []
+            for lemma in results['lemmas']:
+                lemmas.append(nlp_pb2.LemmaInfo(
+                    name=lemma['name'],
+                    key=lemma['key'],
+                    count=lemma['count'],
+                    lang=lemma['lang'],
+                    antonyms=lemma['antonyms'],
+                    derivationally_related_forms=lemma['derivationally_related_forms'],
+                    pertainyms=lemma['pertainyms']
+                ))
+            
+            return nlp_pb2.LemmaSearchResponse(
+                lemmas=lemmas,
+                original_word=results['original_word'],
+                morphed_word=results['morphed_word'],
+                pos=results['pos'],
+                lang=results['lang']
+            )
+        except Exception as e:
+            logger.error(f"LemmaSearch error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Lemma search failed: {e}")
+            return nlp_pb2.LemmaSearchResponse()
+
+    def SynonymSearch(self, request, context):
+        """Search for synonyms of a word."""
+        logger.info(f"SynonymSearch request: word={request.word}, lang={request.lang}")
+        try:
+            results = self.nlp_processor.search_synonyms(
+                request.word,
+                request.lang if request.lang else 'eng',
+                request.max_synonyms if request.max_synonyms else 20
+            )
+            
+            # Convert synonym groups
+            synonym_groups = []
+            for group in results['synonym_groups']:
+                synonym_groups.append(nlp_pb2.SynonymGroup(
+                    sense_definition=group['sense_definition'],
+                    synonyms=group['synonyms'],
+                    synset_id=group['synset_id']
+                ))
+            
+            return nlp_pb2.SynonymSearchResponse(
+                word=results['word'],
+                lang=results['lang'],
+                synonym_groups=synonym_groups
+            )
+        except Exception as e:
+            logger.error(f"SynonymSearch error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Synonym search failed: {e}")
+            return nlp_pb2.SynonymSearchResponse()
