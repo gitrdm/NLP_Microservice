@@ -10,7 +10,7 @@ This software is provided for educational and research purposes. While we strive
 
 ## 🚀 What is this?
 
-This microservice provides a robust API for natural language processing tasks. Whether you're building a chatbot, analyzing text sentiment, exploring word meanings, or extracting insights from documents, this service has you covered.
+This microservice provides a robust API for natural language processing tasks. This service does not expose the full NLTK API but only the ones I needed for my research. As my research needs change, I may add more.
 
 ## ✨ Key Features
 
